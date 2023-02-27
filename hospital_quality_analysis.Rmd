@@ -1,0 +1,183 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+## This dataset has info of 30-day mortality, readmission rate for heart diseases in general, and pneumonia for more than 4000 hospitals
+dat <- read.csv('outcome-of-care-measures.csv', colClasses = 'character')
+head(dat)
+```
+```{r}
+ncol(dat) ## we have 46 columns of attributes
+
+names(dat)
+```
+** Plot the 30-day mortality rates for heart attack **  
+```{r}
+## We will make simple histogram of death rate in 30 days from heart attack (which is the column 11)
+dat[, 11] <- as.numeric(dat[, 11])
+hist(dat[,11], xlab = 'Deaths', main = '30-Day Death rate' )
+## We can see that the death rate during the third week of the month is much higher than the rest.
+```
+** Finding the best hospital in a state **
+```{r}
+## Let's try finding out the hospital(col2) having the lowest 30-day death rate from each states(col7) for heart attack (col11), heart failure (col17), and pneumonia (col23). 
+##This function will read the csv file and return a character vector with that hospital's name
+
+best <- function(state, outcome) {
+  dat <- read.csv('outcome-of-care-measures.csv', colClasses = 'character', header = TRUE)
+  
+  ## Creating a df using the chosen column
+  new_dat <- as.data.frame(cbind(dat[,2],
+                                 dat[,7],
+                                 dat[,11],
+                                 dat[,17],
+                                 dat[,23]))
+  colnames(new_dat) <- c('hospital', 'state', 'heart attack', 'heart failure', 'pneumonia')
+  
+  ## Check if the state and result are valid
+  if (!state %in% new_dat[,'state']) {
+    stop('invalid state')
+  }
+  else if (!outcome %in% c('heart attack', 'heart failure', 'pneumonia')) {
+    stop('invalid outcome')
+  }
+  else {
+    vad_state <- which(new_dat[,'state']==state)
+    ## if the state is valid, extract its data
+    state_dat <- new_dat[vad_state,]
+
+    value <- as.numeric(state_dat[,eval(outcome)])
+    ## return the lowest death rate
+    min_d <- min(value, na.rm = TRUE)
+    result <- state_dat[,'hospital'][which(value == min_d)]
+  }
+  return(result[order(result)])
+}
+best("TX", "heart attack")
+best("TX", "heart failure")
+best("MD", "pneumonia")
+best("SC", "heart attack")
+best("NY", "pneumonia")
+best("AK", "pneumonia")
+```
+** Ranking hospitals by outcome in a state ** 
+```{r}
+## Let's write a function that read the csv file and returns a character vector with the name of the hospital and its ranking specified by the num argument. 
+
+## The num argument can take the values 'best' or 'worst'.
+
+rankhospital <- function(state, outcome, num = 'best'){
+  # Read the data
+  dat <- read.csv('outcome-of-care-measures.csv', colClasses = 'character')
+  
+  ## Creating a df using the chosen column
+  new_dat <- as.data.frame(cbind(dat[,2],
+                                 dat[,7],
+                                 dat[,11],
+                                 dat[,17],
+                                 dat[,23]), stringsAsFactors = FALSE)
+  colnames(new_dat) <- c('hospital', 'state', 'heart attack', 'heart failure', 'pneumonia')
+  
+  ## Check if the state and result are valid
+  if (!state %in% new_dat[,'state']) {
+    stop('invalid state')
+  }
+  else if (!outcome %in% c('heart attack', 'heart failure', 'pneumonia')) {
+    stop('invalid outcome')
+  }
+  else if (is.numeric(num)) {
+    vad_state <- which(new_dat[,'state']==state)
+    ## if the state is valid, extract its data
+    state_dat <- new_dat[vad_state,]
+
+    state_dat[,eval(outcome)] <- as.numeric(state_dat[,eval(outcome)])
+    state_dat <- state_dat[order(state_dat[,eval(outcome)], state_dat[,'hospital']),]
+    
+    ##return the outcome
+    result <- state_dat[,'hospital'][num]
+  }
+  
+  ## Consider the case which num is not numeric 
+  else if (!is.numeric(num)) {
+    if (num == 'best') {
+      result <- best(state, outcome)
+    } 
+    else if (num == 'worst') {
+      vad_state <- which(new_dat[,'state']==state)
+      state_dat <- new_dat[vad_state,]
+      state_dat[,eval(outcome)] <- as.numeric(state_dat[,eval(outcome)])
+      state_dat <- state_dat[order(state_dat[,eval(outcome)], state_dat[,'hospital'], decreasing = TRUE),]
+      result <- state_dat[,'hospital'][1]
+    }
+    else {
+      stop('invalid rank')
+    }
+  }
+  return(result)
+}
+rankhospital("TX", "heart failure", 4)
+rankhospital("MN", "heart attack", 5000)
+rankhospital("NC", "heart attack", "worst")
+rankhospital("WA", "heart attack", 7)
+rankhospital("TX", "pneumonia", 10)
+rankhospital("NY", "heart attack", 7)
+```
+** Ranking hospitals in all states ** 
+```{r}
+rankall <- function(outcome, num = "best") {
+  ## Read outcome data
+  data <- read.csv("outcome-of-care-measures.csv", colClasses = "character")
+  fd <- as.data.frame(cbind(data[, 2],  # hospital
+                              data[, 7],  # state
+                              data[, 11],  # heart attack
+                              data[, 17],  # heart failure
+                              data[, 23]), # pneumonia
+                        stringsAsFactors = FALSE)
+  colnames(fd) <- c("hospital", "state", "measure", "score")
+  fd$score <- as.numeric(fd$score)
+  
+  ## Check that outcome is valid
+  if (!outcome %in% unique(fd$measure)) {
+    stop("Invalid outcome")
+  }
+  
+  ## Check that num is valid
+  if (!is.numeric(num) && !num %in% c("best", "worst")) {
+    stop("Invalid num")
+  }
+  
+  ## Filter by outcome
+  fd <- fd[fd$measure == outcome, ]
+  
+  ## Check that there are hospitals with valid scores
+  if (nrow(fd) == 0) {
+    stop("No hospitals with valid scores for outcome")
+  }
+  
+  ## Get ranked hospitals by state
+  by_state <- split(fd, fd$state)
+  ordered <- lapply(by_state, function(state_data) {
+    state_data <- state_data[order(state_data$score, state_data$hospital), ]
+    if (num == "best") {
+      state_data <- state_data[1:min(nrow(state_data), max(num, 1)), ]
+    } else {
+      state_data <- state_data[nrow(state_data):max(nrow(state_data) - num + 1, 1), ]
+    }
+    cbind(state_data$hospital, state_data$state)
+  })
+  result <- do.call(rbind, ordered)
+  output <- data.frame(hospital = result[, 1], state = result[, 2], stringsAsFactors = FALSE)
+  
+  ## Remove row names
+  rownames(output) <- NULL
+  
+  return(output)
+}
+
+  
+head(rankall("heart attack", 20), 10)
+
+```
+
+
